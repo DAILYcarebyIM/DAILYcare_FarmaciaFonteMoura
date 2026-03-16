@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAILYcare — Consignação Farmácia</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;color:#1a1a1a;background:#f5f5f0;min-height:100vh}
+.header{background:#fff;border-bottom:1px solid #e5e5e0;padding:0 1.5rem;display:flex;align-items:center;gap:1rem;height:52px}
+.logo{font-weight:600;font-size:15px}.logo span{color:#8b6f4e}
+.sub{font-size:12px;color:#999}
+.main{max-width:1000px;margin:0 auto;padding:1.5rem}
+.card{background:#fff;border:1px solid #e5e5e0;border-radius:10px;padding:1rem 1.25rem;margin-bottom:1rem}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:1rem}
+.met{background:#f8f8f5;border-radius:8px;padding:0.75rem;border:1px solid #eeede8}
+.met .lb{font-size:11px;color:#888;margin-bottom:3px}
+.met .vl{font-size:20px;font-weight:600}
+.amber{color:#856404}.green{color:#1a6b1a}
+.cbanner{background:#fff8e6;border:1px solid #f5c842;border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid #eee;color:#888;font-size:11px;background:#fafaf7}
+td{padding:7px 10px;border-bottom:1px solid #f0f0ec;vertical-align:middle}
+.badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600}
+.bg-g{background:#d4edda;color:#155724}.bg-a{background:#fff3cd;color:#856404}
+.btn{padding:7px 14px;border:1px solid #ddd;border-radius:7px;cursor:pointer;font-size:12px;background:#fff;color:#1a1a1a;font-family:inherit;font-weight:500}
+.btn:hover{background:#f5f5f0}
+.btn.pri{background:#1a1a1a;color:#fff}
+h2{font-size:15px;font-weight:600;margin-bottom:12px}
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:1rem}
+@keyframes prog{from{transform:translateX(-20%)}to{transform:translateX(120%)}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">DAILY<span>care</span></div>
+  <div class="sub">Consignação — Farmácia Fonte da Moura</div>
+  <div style="margin-left:auto;font-size:11px;color:#999" id="sync-status">A carregar…</div>
+  <button class="btn" onclick="recarregar()" style="font-size:11px;padding:4px 10px">↻ Atualizar</button>
+</div>
+<div class="main" id="main">
+  <div class="loading">
+    <div style="font-size:18px;font-weight:600;color:#8b6f4e">DAILYcare</div>
+    <div style="font-size:13px;color:#888">A carregar dados…</div>
+    <div style="width:200px;height:3px;background:#eee;border-radius:2px;overflow:hidden">
+      <div style="width:60%;height:100%;background:#8b6f4e;border-radius:2px;animation:prog 1.2s ease-in-out infinite alternate"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SB_URL = 'https://zwdnnawqcbulcfveiqmx.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3ZG5uYXdxY2J1bGNmdmVpcW14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MTQwMTAsImV4cCI6MjA4OTE5MDAxMH0.jXeTvdQPMSeK8CZTKvp2tF93HxyXlqaGCybGZbZYnTs';
+const HDR = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+const fmt = n => (Math.round(n*100)/100).toFixed(2)+'€';
+
+async function recarregar(){ await init(); }
+
+async function init(){
+  document.getElementById('sync-status').textContent = 'A carregar…';
+  try{
+    // ler dados principais
+    const r = await fetch(SB_URL+'/rest/v1/dailycare_data?id=eq.main&select=data,updated_at', {headers:HDR});
+    if(!r.ok) throw new Error('sem ligação');
+    const rows = await r.json();
+    if(!rows.length || !rows[0].data || !rows[0].data.consultas){
+      document.getElementById('main').innerHTML='<div class="card" style="text-align:center;color:#999;padding:3rem">Sem dados disponíveis ainda.</div>';
+      return;
+    }
+    const DB = rows[0].data;
+    const updated = new Date(rows[0].updated_at).toLocaleString('pt-PT');
+    document.getElementById('sync-status').textContent = 'Atualizado: '+updated;
+    renderConsign(DB);
+  }catch(e){
+    document.getElementById('sync-status').textContent = 'Erro de ligação';
+    document.getElementById('main').innerHTML='<div class="card" style="color:#c0392b;text-align:center;padding:2rem">Não foi possível carregar os dados. Verifica a ligação à internet.</div>';
+  }
+}
+
+function cNome(DB, id){ const c=(DB.clientes||[]).find(x=>x.id===id); return c?c.nome:'—'; }
+
+function renderConsign(DB){
+  const consultas = DB.consultas||[];
+  const pagas = DB.consignacoesPagas||[];
+
+  const items = consultas.flatMap(c=>
+    (c.vendas||[]).filter(v=>v.marca==='Farmácia Fonte da Moura'||v.consig).map((v,li)=>{
+      const prod=(DB.produtos||[]).find(p=>p.id===v.prodId);
+      return{...v, data:c.data, cnp:prod?.cnp||'', idx:
+        consultas.slice(0,consultas.indexOf(c)).reduce((s,cc)=>s+(cc.vendas||[]).filter(vv=>vv.marca==='Farmácia Fonte da Moura'||vv.consig).length,0)+li
+      };
+    })
+  );
+
+  const pendentes = items.filter(v=>!pagas.includes(v.idx));
+  const tPagar  = pendentes.reduce((s,v)=>s+v.custo*(v.qty||1),0);
+  const tVendido= items.reduce((s,v)=>s+v.pvp*(v.qty||1),0);
+  const tUnid   = items.reduce((s,v)=>s+(v.qty||1),0);
+
+  document.getElementById('main').innerHTML=`
+    <h2>Produtos vendidos em consignação</h2>
+    <div class="cbanner">
+      <div>
+        <div style="font-weight:600;color:#856404">Total por liquidar</div>
+        <div style="font-size:11px;color:#999">Valor baseado no preço de custo acordado</div>
+      </div>
+      <div style="font-size:26px;font-weight:700;color:#856404">${fmt(tPagar)}</div>
+    </div>
+    <div class="metrics">
+      <div class="met"><div class="lb">Total vendido (PVP)</div><div class="vl">${fmt(tVendido)}</div></div>
+      <div class="met"><div class="lb">Por liquidar</div><div class="vl amber">${fmt(tPagar)}</div></div>
+      <div class="met"><div class="lb">Já pago</div><div class="vl green">${fmt(items.filter(v=>pagas.includes(v.idx)).reduce((s,v)=>s+v.custo*(v.qty||1),0))}</div></div>
+      <div class="met"><div class="lb">Unidades vendidas</div><div class="vl">${tUnid}</div></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:1rem">
+      <button class="btn pri" onclick="exportarCSV()">↓ Exportar CSV</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table>
+        <thead><tr><th>Data</th><th>CNP</th><th>Produto</th><th>Qty</th><th>PVP unit.</th><th>PVP total</th><th>Custo farm.</th><th>Estado</th></tr></thead>
+        <tbody>
+          ${items.length ? items.map(v=>{
+            const pago=pagas.includes(v.idx), qty=v.qty||1;
+            return`<tr style="${pago?'opacity:0.4;text-decoration:line-through':''}">
+              <td>${v.data}</td>
+              <td style="font-family:monospace;color:#8b6f4e">${v.cnp||'—'}</td>
+              <td><strong>${v.nome}</strong></td>
+              <td>${qty}</td>
+              <td>${fmt(v.pvp)}</td>
+              <td>${fmt(v.pvp*qty)}</td>
+              <td class="amber"><strong>${fmt(v.custo*qty)}</strong></td>
+              <td><span class="badge ${pago?'bg-g':'bg-a'}">${pago?'Pago':'Por pagar'}</span></td>
+            </tr>`;
+          }).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:#999">Sem vendas registadas</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:#bbb;text-align:center;margin-top:1rem">
+      Esta página é atualizada automaticamente cada vez que a DAILYcare regista uma venda.
+    </div>`;
+
+  // guardar items para exportar
+  window._consignItems = items;
+  window._consignDB = DB;
+}
+
+function exportarCSV(){
+  const items = window._consignItems||[];
+  const DB = window._consignDB||{};
+  const pagas = DB.consignacoesPagas||[];
+  const header = ['Data','CNP','Produto','Quantidade','PVP unitário','PVP total','Custo farmácia','Estado'];
+  const rows = items.map(v=>{
+    const qty=v.qty||1;
+    return[v.data,v.cnp||'',v.nome,qty,v.pvp.toFixed(2),(v.pvp*qty).toFixed(2),(v.custo*qty).toFixed(2),pagas.includes(v.idx)?'Pago':'Por pagar'];
+  });
+  const total = items.filter(v=>!pagas.includes(v.idx)).reduce((s,v)=>s+v.custo*(v.qty||1),0);
+  const csv=[
+    ['DAILYcare — Consignação Farmácia Fonte da Moura'],
+    ['Exportado em: '+new Date().toLocaleString('pt-PT')],
+    [],
+    header,
+    ...rows,
+    [],
+    ['','','','','','Total por liquidar:',total.toFixed(2),'']
+  ].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'}));
+  a.download=`consignacao_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+}
+
+init();
+// auto-refresh a cada 5 minutos
+setInterval(init, 5*60*1000);
+</script>
+</body>
+</html>
